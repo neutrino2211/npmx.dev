@@ -42,6 +42,7 @@ const orgName = computed(() => {
 const { data: pkg, status, error } = usePackage(packageName, requestedVersion)
 
 const { data: downloads } = usePackageDownloads(packageName, 'last-week')
+const { data: weeklyDownloads } = usePackageWeeklyDownloadEvolution(packageName, { weeks: 52 })
 
 // Fetch README for specific version if requested, otherwise latest
 const { data: readmeData } = useLazyFetch<{ html: string }>(
@@ -495,15 +496,15 @@ defineOgImageComponent('Package', {
               <span class="text-fg-subtle font-mono text-sm select-none">$</span>
               <code class="font-mono text-sm"
                 ><ClientOnly
-                  ><span class="text-fg">{{ selectedPMLabel }}</span>
-                  <span class="text-fg-muted">{{ selectedPMAction }}</span
+                  ><span class="text-fg">{{ selectedPMLabel }}</span
+                  >&nbsp;<span class="text-fg-muted">{{ selectedPMAction }}</span
                   ><span v-if="selectedPM !== 'deno'" class="text-fg-muted"
                     >&nbsp;{{ pkg.name }}</span
                   ><span v-else class="text-fg-muted">{{ pkg.name }}</span
                   ><span v-if="requestedVersion" class="text-fg-muted">@{{ requestedVersion }}</span
                   ><template #fallback
                     ><span class="text-fg">npm</span>&nbsp;<span class="text-fg-muted"
-                      >install {{ pkg.name }}</span
+                      >install&nbsp;{{ pkg.name }}</span
                     ></template
                   ></ClientOnly
                 ></code
@@ -565,6 +566,9 @@ defineOgImageComponent('Package', {
               </li>
             </ul>
           </section>
+
+          <!-- Donwload stats -->
+          <PackageDownloadStats :downloads="weeklyDownloads" />
 
           <section
             v-if="
