@@ -14,18 +14,19 @@
     "lint": "oxlint && oxfmt --check .",
     "lint:fix": "oxlint --fix && oxfmt .",
     "generate": "nuxt generate",
+    "npmx-connector": "pnpm --filter npmx-connector dev",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare && simple-git-hooks",
-    "test:types": "nuxt prepare && vue-tsc -b --noEmit",
     "test": "vitest",
-    "test:coverage": "vitest --coverage",
-    "test:unit": "vitest --project unit",
-    "test:nuxt": "vitest --project nuxt",
     "test:browser": "playwright test",
     "test:browser:ui": "playwright test --ui",
-    "test:browser:update": "playwright test --update-snapshots"
+    "test:browser:update": "playwright test --update-snapshots",
+    "test:nuxt": "vitest --project nuxt",
+    "test:types": "nuxt prepare && vue-tsc -b --noEmit && pnpm --filter npmx-connector test:types",
+    "test:unit": "vitest --project unit"
   },
   "dependencies": {
+    "@iconify-json/simple-icons": "^1.2.67",
     "@iconify-json/vscode-icons": "^1.2.40",
     "@nuxt/fonts": "^0.13.0",
     "@nuxt/scripts": "^0.13.2",
@@ -43,7 +44,7 @@
     "ufo": "^1.6.3",
     "unplugin-vue-router": "^0.19.2",
     "vue": "3.5.27",
-    "vue-data-ui": "^3.13.0"
+    "vue-data-ui": "^3.13.2"
   },
   "devDependencies": {
     "@iconify-json/carbon": "^1.2.18",

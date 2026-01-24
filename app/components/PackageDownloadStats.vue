@@ -40,6 +40,17 @@ const config = computed(() => ({
     },
     line: {
       color: '#6A6A6A',
+      pulse: {
+        show: true,
+        loop: true, // runs only once if false
+        radius: 2,
+        color: '#8A8A8A',
+        easing: 'ease-in-out',
+        trail: {
+          show: true,
+          length: 6,
+        },
+      },
     },
     plot: {
       radius: 6,
@@ -68,9 +79,34 @@ const config = computed(() => ({
           Weekly Downloads
         </h2>
       </div>
-      <div class="w-full">
+      <div class="w-full overflow-hidden">
         <ClientOnly>
-          <VueUiSparkline :dataset :config />
+          <VueUiSparkline class="max-w-full" :dataset :config />
+          <template #fallback>
+            <!-- Skeleton matching sparkline layout: title row + chart with data label -->
+            <div class="min-h-[100px]">
+              <!-- Title row: date range (24px height) -->
+              <div class="h-6 flex items-center pl-3">
+                <span class="skeleton h-3 w-36" />
+              </div>
+              <!-- Chart area: data label left, sparkline right -->
+              <div class="aspect-[500/80] flex items-center">
+                <!-- Data label (covers ~42% width) -->
+                <div class="w-[42%] flex items-center pl-0.5">
+                  <span class="skeleton h-7 w-24" />
+                </div>
+                <!-- Sparkline area (~58% width) -->
+                <div class="flex-1 flex items-end gap-0.5 h-4/5 pr-3">
+                  <span
+                    v-for="i in 16"
+                    :key="i"
+                    class="skeleton flex-1 rounded-sm"
+                    :style="{ height: `${25 + ((i * 7) % 50)}%` }"
+                  />
+                </div>
+              </div>
+            </div>
+          </template>
         </ClientOnly>
       </div>
     </section>
@@ -87,5 +123,9 @@ const config = computed(() => ({
   font-family:
     Geist Mono,
     monospace !important;
+}
+.vue-ui-sparkline,
+.vue-ui-sparkline svg {
+  max-width: 100% !important;
 }
 </style>
