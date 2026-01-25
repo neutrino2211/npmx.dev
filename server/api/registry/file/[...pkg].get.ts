@@ -113,6 +113,7 @@ export default defineCachedEventHandler(
         message: 'Package name, version, and file path are required',
       })
     }
+    assertValidPackageName(packageName)
 
     try {
       const content = await fetchFileContent(packageName, version, filePath)
@@ -174,7 +175,8 @@ export default defineCachedEventHandler(
     }
   },
   {
-    maxAge: 60 * 60, // Cache for 1 hour (files don't change for a given version)
+    // File content for a specific version never changes - cache permanently
+    maxAge: 60 * 60 * 24 * 365, // 1 year
     getKey: event => {
       const pkg = getRouterParam(event, 'pkg') ?? ''
       return `file:v${CACHE_VERSION}:${pkg}`

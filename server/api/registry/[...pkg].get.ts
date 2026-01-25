@@ -6,6 +6,7 @@ export default defineCachedEventHandler(
     }
 
     const packageName = pkg.replace(/\//g, '/')
+    assertValidPackageName(packageName)
 
     try {
       return await fetchNpmPackage(packageName)
@@ -17,7 +18,8 @@ export default defineCachedEventHandler(
     }
   },
   {
-    maxAge: 60 * 5,
+    maxAge: 60 * 60, // 1 hour
+    swr: true,
     getKey: event => getRouterParam(event, 'pkg') ?? '',
   },
 )

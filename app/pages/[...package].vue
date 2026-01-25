@@ -2,6 +2,7 @@
 import { joinURL } from 'ufo'
 import type { PackumentVersion, NpmVersionDist } from '#shared/types'
 import type { JsrPackageInfo } from '#shared/types/jsr'
+import { assertValidPackageName } from '#shared/utils/npm'
 
 definePageMeta({
   name: 'package',
@@ -37,6 +38,10 @@ const parsedRoute = computed(() => {
 const packageName = computed(() => parsedRoute.value.packageName)
 const requestedVersion = computed(() => parsedRoute.value.requestedVersion)
 
+if (import.meta.server) {
+  assertValidPackageName(packageName.value)
+}
+
 // Extract org name from scoped package (e.g., "@nuxt/kit" -> "nuxt")
 const orgName = computed(() => {
   const name = packageName.value
@@ -67,6 +72,43 @@ const { data: jsrInfo } = useLazyFetch<JsrPackageInfo>(() => `/api/jsr/${package
   immediate: computed(() => packageName.value.startsWith('@')).value,
 })
 
+// Fetch total install size (lazy, can be slow for large dependency trees)
+interface InstallSizeResult {
+  package: string
+  version: string
+  selfSize: number
+  totalSize: number
+  dependencyCount: number
+}
+const {
+  data: installSize,
+  status: installSizeStatus,
+  execute: fetchInstallSize,
+} = useLazyFetch<InstallSizeResult | null>(
+  () => {
+    const base = `/api/registry/install-size/${packageName.value}`
+    const version = requestedVersion.value
+    return version ? `${base}/v/${version}` : base
+  },
+  {
+    server: false,
+    immediate: false,
+  },
+)
+onMounted(() => fetchInstallSize())
+
+const sizeTooltip = computed(() => {
+  const chunks = [
+    displayVersion.value &&
+      displayVersion.value.dist.unpackedSize &&
+      `${formatBytes(displayVersion.value.dist.unpackedSize)} unpacked size (this package)`,
+    installSize.value &&
+      installSize.value.dependencyCount &&
+      `${formatBytes(installSize.value.totalSize)} total unpacked size (including all ${installSize.value.dependencyCount} dependencies for linux-x64)`,
+  ]
+  return chunks.filter(Boolean).join('\n')
+})
+
 // Get the version to display (requested or latest)
 const displayVersion = computed(() => {
   if (!pkg.value) return null
@@ -93,7 +135,12 @@ const hasDependencies = computed(() => {
   if (!displayVersion.value) return false
   const deps = displayVersion.value.dependencies
   const peerDeps = displayVersion.value.peerDependencies
-  return (deps && Object.keys(deps).length > 0) || (peerDeps && Object.keys(peerDeps).length > 0)
+  const optionalDeps = displayVersion.value.optionalDependencies
+  return (
+    (deps && Object.keys(deps).length > 0) ||
+    (peerDeps && Object.keys(peerDeps).length > 0) ||
+    (optionalDeps && Object.keys(optionalDeps).length > 0)
+  )
 })
 
 const repositoryUrl = computed(() => {
@@ -118,14 +165,6 @@ function normalizeGitUrl(url: string): string {
     .replace(/\.git$/, '')
     .replace(/^ssh:\/\/git@github\.com/, 'https://github.com')
     .replace(/^git@github\.com:/, 'https://github.com/')
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
 }
 
 function formatBytes(bytes: number): string {
@@ -300,6 +339,21 @@ defineOgImageComponent('Package', {
                 aria-label="Verified provenance"
               />
             </a>
+
+            <!-- Package metrics (module format, types) -->
+            <ClientOnly>
+              <PackageMetricsBadges
+                v-if="displayVersion"
+                :package-name="pkg.name"
+                :version="displayVersion.version"
+              />
+              <template #fallback>
+                <ul class="flex items-center gap-1.5">
+                  <li class="skeleton w-8 h-5 rounded" />
+                  <li class="skeleton w-12 h-5 rounded" />
+                </ul>
+              </template>
+            </ClientOnly>
           </div>
           <!-- Fixed height description container to prevent CLS -->
           <div ref="descriptionRef" class="relative max-w-2xl min-h-[4.5rem]">
@@ -318,7 +372,7 @@ defineOgImageComponent('Package', {
             >
               <button
                 type="button"
-                class="font-mono text-xs text-fg-muted hover:text-fg bg-bg px-1 transition-colors duration-200"
+                class="font-mono text-xs text-fg-muted hover:text-fg bg-bg px-1 transition-colors duration-200 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
                 @click="descriptionExpanded = true"
               >
                 show more
@@ -338,29 +392,80 @@ defineOgImageComponent('Package', {
 
           <div v-if="downloads" class="space-y-1">
             <dt class="text-xs text-fg-subtle uppercase tracking-wider">Weekly</dt>
-            <dd class="font-mono text-sm text-fg">
+            <dd class="font-mono text-sm text-fg flex items-baseline justify-start gap-2">
               {{ formatNumber(downloads.downloads) }}
+              <a
+                :href="`https://npm.chart.dev/${pkg.name}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-fg-subtle hover:text-fg transition-colors duration-200"
+                title="View download trends"
+              >
+                <span class="i-carbon-chart-line w-3.5 h-3.5 inline-block" aria-hidden="true" />
+                <span class="sr-only">View download trends</span>
+              </a>
             </dd>
           </div>
 
-          <div v-if="displayVersion?.dist?.unpackedSize" class="space-y-1">
-            <dt class="text-xs text-fg-subtle uppercase tracking-wider">Size</dt>
-            <dd class="font-mono text-sm text-fg">
-              {{ formatBytes(displayVersion.dist.unpackedSize) }}
-            </dd>
-          </div>
-
-          <div v-if="getDependencyCount(displayVersion) > 0" class="space-y-1">
+          <div class="space-y-1">
             <dt class="text-xs text-fg-subtle uppercase tracking-wider">Deps</dt>
-            <dd class="font-mono text-sm text-fg">
+            <dd class="font-mono text-sm text-fg flex items-baseline justify-start gap-2">
               {{ getDependencyCount(displayVersion) }}
+              <a
+                v-if="getDependencyCount(displayVersion) > 0"
+                :href="`https://npmgraph.js.org/?q=${pkg.name}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-fg-subtle hover:text-fg transition-colors duration-200"
+                title="View dependency graph"
+              >
+                <span class="i-carbon-network-3 w-3.5 h-3.5 inline-block" aria-hidden="true" />
+                <span class="sr-only">View dependency graph</span>
+              </a>
             </dd>
           </div>
 
-          <div v-if="pkg.time?.modified" class="space-y-1 col-span-2">
-            <dt class="text-xs text-fg-subtle uppercase tracking-wider">Updated</dt>
+          <div class="space-y-1 col-span-2">
+            <dt class="text-xs text-fg-subtle uppercase tracking-wider flex items-center gap-1">
+              Install Size
+              <span
+                class="i-carbon-information w-3 h-3 text-fg-subtle"
+                aria-hidden="true"
+                :title="sizeTooltip"
+              />
+            </dt>
             <dd class="font-mono text-sm text-fg">
-              <time :datetime="pkg.time.modified">{{ formatDate(pkg.time.modified) }}</time>
+              <!-- Package size (greyed out) -->
+              <span class="text-fg-muted">
+                <span v-if="displayVersion?.dist?.unpackedSize">
+                  {{ formatBytes(displayVersion.dist.unpackedSize) }}
+                </span>
+                <span v-else>-</span>
+              </span>
+
+              <!-- Separator and install size -->
+              <span class="text-fg-subtle mx-1">/</span>
+
+              <span
+                v-if="installSizeStatus === 'pending'"
+                class="inline-flex items-center gap-1 text-fg-subtle"
+              >
+                <span
+                  class="i-carbon-circle-dash w-3 h-3 animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+              </span>
+              <span v-else-if="installSize?.totalSize">
+                {{ formatBytes(installSize.totalSize) }}
+              </span>
+              <span v-else class="text-fg-subtle">-</span>
+            </dd>
+          </div>
+
+          <div v-if="pkg.time?.modified" class="space-y-1">
+            <dt class="text-xs text-fg-subtle uppercase tracking-wider text-right">Updated</dt>
+            <dd class="font-mono text-sm text-fg text-right">
+              <NuxtTime :datetime="pkg.time.modified" date-style="medium" />
             </dd>
           </div>
         </dl>
@@ -375,7 +480,7 @@ defineOgImageComponent('Package', {
                 rel="noopener noreferrer"
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
               >
-                <span class="i-carbon-logo-github w-4 h-4" />
+                <span class="i-carbon-logo-github w-4 h-4" aria-hidden="true" />
                 repo
               </a>
             </li>
@@ -386,7 +491,7 @@ defineOgImageComponent('Package', {
                 rel="noopener noreferrer"
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
               >
-                <span class="i-carbon-link w-4 h-4" />
+                <span class="i-carbon-link w-4 h-4" aria-hidden="true" />
                 homepage
               </a>
             </li>
@@ -397,7 +502,7 @@ defineOgImageComponent('Package', {
                 rel="noopener noreferrer"
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
               >
-                <span class="i-carbon-warning w-4 h-4" />
+                <span class="i-carbon-warning w-4 h-4" aria-hidden="true" />
                 issues
               </a>
             </li>
@@ -408,7 +513,7 @@ defineOgImageComponent('Package', {
                 rel="noopener noreferrer"
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
               >
-                <span class="i-carbon-cube w-4 h-4" />
+                <span class="i-carbon-cube w-4 h-4" aria-hidden="true" />
                 npm
               </a>
             </li>
@@ -420,43 +525,22 @@ defineOgImageComponent('Package', {
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
                 title="Also available on JSR"
               >
-                <span class="i-simple-icons-jsr w-4 h-4" />
+                <span class="i-simple-icons-jsr w-4 h-4" aria-hidden="true" />
                 jsr
               </a>
             </li>
-            <li>
+            <li class="flex-grow">
               <a
                 :href="`https://socket.dev/npm/package/${pkg.name}/overview/${displayVersion?.version ?? 'latest'}`"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
               >
-                <span class="i-carbon-security w-4 h-4" />
-                security
+                <span class="i-simple-icons-socket w-4 h-4" aria-hidden="true" />
+                socket.dev
               </a>
             </li>
-            <li>
-              <a
-                :href="`https://npm.chart.dev/${pkg.name}`"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
-              >
-                <span class="i-carbon-chart-line w-4 h-4" />
-                trends
-              </a>
-            </li>
-            <li>
-              <a
-                :href="`https://pkg-size.dev/${pkg.name}`"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
-              >
-                <span class="i-carbon-data-volume w-4 h-4" />
-                size
-              </a>
-            </li>
+
             <li v-if="displayVersion">
               <NuxtLink
                 :to="{
@@ -465,13 +549,20 @@ defineOgImageComponent('Package', {
                 }"
                 class="link-subtle font-mono text-sm inline-flex items-center gap-1.5"
               >
-                <span class="i-carbon-code w-4 h-4" />
+                <span class="i-carbon-code w-4 h-4" aria-hidden="true" />
                 code
               </NuxtLink>
             </li>
           </ul>
         </nav>
       </header>
+
+      <!-- Security vulnerabilities warning -->
+      <PackageVulnerabilities
+        v-if="displayVersion"
+        :package-name="pkg.name"
+        :version="displayVersion.version"
+      />
 
       <!-- Install command with package manager selector -->
       <section aria-labelledby="install-heading" class="mb-8">
@@ -540,7 +631,7 @@ defineOgImageComponent('Package', {
             </div>
           </div>
           <button
-            class="absolute top-3 right-3 px-2 py-1 font-mono text-xs text-fg-muted bg-bg-subtle/80 border border-border rounded transition-all duration-200 hover:(text-fg border-border-hover) active:scale-95"
+            class="absolute top-3 right-3 px-2 py-1 font-mono text-xs text-fg-muted bg-bg-subtle/80 border border-border rounded transition-colors duration-200 hover:(text-fg border-border-hover) active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
             @click="copyInstallCommand"
           >
             {{ copied ? 'copied!' : 'copy' }}
@@ -611,21 +702,21 @@ defineOgImageComponent('Package', {
               Compatibility
             </h2>
             <dl class="space-y-2">
-              <div
-                v-if="displayVersion.engines.node"
-                class="flex items-center justify-between gap-4 py-1"
-              >
+              <div v-if="displayVersion.engines.node" class="flex justify-between gap-4 py-1">
                 <dt class="text-fg-muted text-sm shrink-0">node</dt>
-                <dd class="font-mono text-sm text-fg truncate" :title="displayVersion.engines.node">
+                <dd
+                  class="font-mono text-sm text-fg text-right"
+                  :title="displayVersion.engines.node"
+                >
                   {{ displayVersion.engines.node }}
                 </dd>
               </div>
-              <div
-                v-if="displayVersion.engines.npm"
-                class="flex items-center justify-between gap-4 py-1"
-              >
+              <div v-if="displayVersion.engines.npm" class="flex justify-between gap-4 py-1">
                 <dt class="text-fg-muted text-sm shrink-0">npm</dt>
-                <dd class="font-mono text-sm text-fg truncate" :title="displayVersion.engines.npm">
+                <dd
+                  class="font-mono text-sm text-fg text-right"
+                  :title="displayVersion.engines.npm"
+                >
                   {{ displayVersion.engines.npm }}
                 </dd>
               </div>
@@ -648,6 +739,7 @@ defineOgImageComponent('Package', {
             :dependencies="displayVersion?.dependencies"
             :peer-dependencies="displayVersion?.peerDependencies"
             :peer-dependencies-meta="displayVersion?.peerDependenciesMeta"
+            :optional-dependencies="displayVersion?.optionalDependencies"
           />
         </aside>
       </div>

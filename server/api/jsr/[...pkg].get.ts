@@ -14,11 +14,13 @@ export default defineCachedEventHandler<Promise<JsrPackageInfo>>(
     if (!pkgPath) {
       throw createError({ statusCode: 400, message: 'Package name is required' })
     }
+    assertValidPackageName(pkgPath)
 
     return await fetchJsrPackageInfo(pkgPath)
   },
   {
     maxAge: 60 * 60, // 1 hour
+    swr: true,
     name: 'api-jsr-package',
     getKey: event => getRouterParam(event, 'pkg') ?? '',
   },

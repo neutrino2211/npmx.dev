@@ -58,6 +58,7 @@ export default defineCachedEventHandler(
     if (!packageName) {
       throw createError({ statusCode: 400, message: 'Package name is required' })
     }
+    assertValidPackageName(packageName)
 
     try {
       const packageData = await fetchNpmPackage(packageName)
@@ -97,7 +98,8 @@ export default defineCachedEventHandler(
     }
   },
   {
-    maxAge: 60 * 10,
+    maxAge: 60 * 60, // 1 hour
+    swr: true,
     getKey: event => {
       const pkg = getRouterParam(event, 'pkg') ?? ''
       return `readme:${pkg}`

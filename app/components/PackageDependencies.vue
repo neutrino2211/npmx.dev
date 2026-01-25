@@ -1,14 +1,36 @@
 <script setup lang="ts">
+import { useOutdatedDependencies, getOutdatedTooltip } from '~/composables/useNpmRegistry'
+import type { OutdatedDependencyInfo } from '~/composables/useNpmRegistry'
+
 const props = defineProps<{
   packageName: string
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
+  optionalDependencies?: Record<string, string>
 }>()
+
+// Fetch outdated info for dependencies
+const outdatedDeps = useOutdatedDependencies(() => props.dependencies)
+
+/**
+ * Get CSS class for a dependency version based on outdated status
+ */
+function getVersionClass(info: OutdatedDependencyInfo | undefined): string {
+  if (!info) return 'text-fg-subtle'
+
+  // Red for major versions behind
+  if (info.majorsBehind > 0) return 'text-red-500 cursor-help'
+  // Orange for minor versions behind
+  if (info.minorsBehind > 0) return 'text-orange-500 cursor-help'
+  // Yellow for patch versions behind
+  return 'text-yellow-500 cursor-help'
+}
 
 // Expanded state for each section
 const depsExpanded = ref(false)
 const peerDepsExpanded = ref(false)
+const optionalDepsExpanded = ref(false)
 
 // Sort dependencies alphabetically
 const sortedDependencies = computed(() => {
@@ -32,27 +54,21 @@ const sortedPeerDependencies = computed(() => {
       return a.name.localeCompare(b.name)
     })
 })
+
+// Sort optional dependencies alphabetically
+const sortedOptionalDependencies = computed(() => {
+  if (!props.optionalDependencies) return []
+  return Object.entries(props.optionalDependencies).sort(([a], [b]) => a.localeCompare(b))
+})
 </script>
 
 <template>
   <div class="space-y-8">
     <!-- Dependencies -->
     <section v-if="sortedDependencies.length > 0" aria-labelledby="dependencies-heading">
-      <div class="flex items-center justify-between mb-3">
-        <h2 id="dependencies-heading" class="text-xs text-fg-subtle uppercase tracking-wider">
-          Dependencies ({{ sortedDependencies.length }})
-        </h2>
-        <a
-          :href="`https://npmgraph.js.org/?q=${packageName}`"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="link-subtle text-fg-subtle"
-          aria-label="View dependency graph"
-          title="View dependency graph"
-        >
-          <span class="text-xs uppercase tracking-wider"> Graph </span>
-        </a>
-      </div>
+      <h2 id="dependencies-heading" class="text-xs text-fg-subtle uppercase tracking-wider mb-3">
+        Dependencies ({{ sortedDependencies.length }})
+      </h2>
       <ul class="space-y-1 list-none m-0 p-0" aria-label="Package dependencies">
         <li
           v-for="[dep, version] in sortedDependencies.slice(0, depsExpanded ? undefined : 10)"
@@ -65,11 +81,26 @@ const sortedPeerDependencies = computed(() => {
           >
             {{ dep }}
           </NuxtLink>
-          <span
-            class="font-mono text-xs text-fg-subtle max-w-[50%] text-right truncate"
-            :title="version"
-          >
-            {{ version }}
+          <span class="flex items-center gap-1">
+            <span
+              v-if="outdatedDeps[dep]"
+              class="shrink-0"
+              :class="getVersionClass(outdatedDeps[dep])"
+              :title="getOutdatedTooltip(outdatedDeps[dep])"
+              aria-hidden="true"
+            >
+              <span class="i-carbon-warning-alt w-3 h-3" />
+            </span>
+            <span
+              class="font-mono text-xs text-right truncate"
+              :class="getVersionClass(outdatedDeps[dep])"
+              :title="outdatedDeps[dep] ? getOutdatedTooltip(outdatedDeps[dep]) : version"
+            >
+              {{ version }}
+            </span>
+            <span v-if="outdatedDeps[dep]" class="sr-only">
+              ({{ getOutdatedTooltip(outdatedDeps[dep]) }})
+            </span>
           </span>
         </li>
       </ul>
@@ -127,6 +158,50 @@ const sortedPeerDependencies = computed(() => {
         @click="peerDepsExpanded = true"
       >
         show all {{ sortedPeerDependencies.length }} peer deps
+      </button>
+    </section>
+
+    <!-- Optional Dependencies -->
+    <section
+      v-if="sortedOptionalDependencies.length > 0"
+      aria-labelledby="optional-dependencies-heading"
+    >
+      <h2
+        id="optional-dependencies-heading"
+        class="text-xs text-fg-subtle uppercase tracking-wider mb-3"
+      >
+        Optional Dependencies ({{ sortedOptionalDependencies.length }})
+      </h2>
+      <ul class="space-y-1 list-none m-0 p-0" aria-label="Package optional dependencies">
+        <li
+          v-for="[dep, version] in sortedOptionalDependencies.slice(
+            0,
+            optionalDepsExpanded ? undefined : 10,
+          )"
+          :key="dep"
+          class="flex items-center justify-between py-1 text-sm gap-2"
+        >
+          <NuxtLink
+            :to="{ name: 'package', params: { package: dep.split('/') } }"
+            class="font-mono text-fg-muted hover:text-fg transition-colors duration-200 truncate min-w-0"
+          >
+            {{ dep }}
+          </NuxtLink>
+          <span
+            class="font-mono text-xs text-fg-subtle max-w-[50%] text-right truncate"
+            :title="version"
+          >
+            {{ version }}
+          </span>
+        </li>
+      </ul>
+      <button
+        v-if="sortedOptionalDependencies.length > 10 && !optionalDepsExpanded"
+        type="button"
+        class="mt-2 font-mono text-xs text-fg-muted hover:text-fg transition-colors duration-200 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
+        @click="optionalDepsExpanded = true"
+      >
+        show all {{ sortedOptionalDependencies.length }} optional deps
       </button>
     </section>
   </div>
