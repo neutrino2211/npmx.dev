@@ -9,8 +9,8 @@ import type {
   PackageVersionInfo,
 } from '#shared/types'
 import type { ReleaseType } from 'semver'
-import { maxSatisfying, prerelease, major, minor, diff, gt } from 'semver'
-import { compareVersions, isExactVersion } from '~/utils/versions'
+import { maxSatisfying, prerelease, major, minor, diff, gt, compare } from 'semver'
+import { isExactVersion } from '~/utils/versions'
 import { extractInstallScriptsInfo } from '~/utils/install-scripts'
 
 const NPM_REGISTRY = 'https://registry.npmjs.org'
@@ -287,7 +287,8 @@ export function useNpmSearch(
 /**
  * Fetch all package names in an npm organization
  * Uses the /-/org/{org}/package endpoint
- * Returns empty array if org doesn't exist or has no packages
+ * Throws error with statusCode 404 if org doesn't exist
+ * Returns empty array if org exists but has no packages
  */
 async function fetchOrgPackageNames(orgName: string): Promise<string[]> {
   try {
@@ -295,8 +296,16 @@ async function fetchOrgPackageNames(orgName: string): Promise<string[]> {
       `${NPM_REGISTRY}/-/org/${encodeURIComponent(orgName)}/package`,
     )
     return Object.keys(data)
-  } catch {
-    // Org doesn't exist or has no packages
+  } catch (err) {
+    // Check if this is a 404 (org not found)
+    if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Organization not found',
+        message: `The organization "@${orgName}" does not exist on npm`,
+      })
+    }
+    // For other errors (network, etc.), return empty array to be safe
     return []
   }
 }
@@ -307,7 +316,8 @@ async function fetchOrgPackageNames(orgName: string): Promise<string[]> {
 interface MinimalPackument {
   'name': string
   'description'?: string
-  'dist-tags': Record<string, string>
+  // `dist-tags` can be missing in some later unpublished packages
+  'dist-tags'?: Record<string, string>
   'time': Record<string, string>
   'maintainers'?: NpmPerson[]
 }
@@ -333,7 +343,10 @@ async function fetchMinimalPackument(name: string): Promise<MinimalPackument | n
  * Convert packument to search result format for display
  */
 function packumentToSearchResult(pkg: MinimalPackument): NpmSearchResult {
-  const latestVersion = pkg['dist-tags'].latest || Object.values(pkg['dist-tags'])[0] || ''
+  let latestVersion = ''
+  if (pkg['dist-tags']) {
+    latestVersion = pkg['dist-tags'].latest || Object.values(pkg['dist-tags'])[0] || ''
+  }
   const modified = pkg.time.modified || pkg.time[latestVersion] || ''
 
   return {
@@ -382,7 +395,8 @@ export function useOrgPackages(orgName: MaybeRefOrGetter<string>) {
         const packuments = await Promise.all(batch.map(name => fetchMinimalPackument(name)))
 
         for (const pkg of packuments) {
-          if (pkg) {
+          // Filter out any unpublished packages (missing dist-tags)
+          if (pkg && pkg['dist-tags']) {
             results.push(packumentToSearchResult(pkg))
           }
         }
@@ -429,7 +443,7 @@ export async function fetchAllPackageVersions(packageName: string): Promise<Pack
         hasProvenance: false, // Would need to check dist.attestations for each version
         deprecated: versionData.deprecated,
       }))
-      .sort((a, b) => compareVersions(b.version, a.version))
+      .sort((a, b) => compare(b.version, a.version))
   })()
 
   allVersionsCache.set(packageName, promise)
@@ -551,7 +565,7 @@ async function checkDependencyOutdated(
 export function useOutdatedDependencies(
   dependencies: MaybeRefOrGetter<Record<string, string> | undefined>,
 ) {
-  const outdated = ref<Record<string, OutdatedDependencyInfo>>({})
+  const outdated = shallowRef<Record<string, OutdatedDependencyInfo>>({})
 
   async function fetchOutdatedInfo(deps: Record<string, string> | undefined) {
     if (!deps || Object.keys(deps).length === 0) {
