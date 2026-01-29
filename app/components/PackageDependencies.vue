@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { useVulnerabilityTree } from '~/composables/useVulnerabilityTree'
+import { SEVERITY_TEXT_COLORS, getHighestSeverity } from '#shared/utils/severity'
+
 const props = defineProps<{
   packageName: string
+  version: string
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
@@ -9,6 +13,18 @@ const props = defineProps<{
 
 // Fetch outdated info for dependencies
 const outdatedDeps = useOutdatedDependencies(() => props.dependencies)
+
+// Get vulnerability info from shared cache (already fetched by PackageVulnerabilityTree)
+const { data: vulnTree } = useVulnerabilityTree(
+  () => props.packageName,
+  () => props.version,
+)
+
+// Check if a dependency has vulnerabilities (only direct deps)
+function getVulnerableDepInfo(depName: string) {
+  if (!vulnTree.value) return null
+  return vulnTree.value.vulnerablePackages.find(p => p.name === depName && p.depth === 'direct')
+}
 
 // Expanded state for each section
 const depsExpanded = shallowRef(false)
@@ -48,9 +64,26 @@ const sortedOptionalDependencies = computed(() => {
 <template>
   <div class="space-y-8">
     <!-- Dependencies -->
-    <section v-if="sortedDependencies.length > 0" aria-labelledby="dependencies-heading">
-      <h2 id="dependencies-heading" class="text-xs text-fg-subtle uppercase tracking-wider mb-3">
-        {{ $t('package.dependencies.title', { count: sortedDependencies.length }) }}
+    <section
+      id="dependencies"
+      v-if="sortedDependencies.length > 0"
+      aria-labelledby="dependencies-heading"
+      class="scroll-mt-20"
+    >
+      <h2
+        id="dependencies-heading"
+        class="group text-xs text-fg-subtle uppercase tracking-wider mb-3"
+      >
+        <a
+          href="#dependencies"
+          class="inline-flex items-center gap-1.5 text-fg-subtle hover:text-fg-muted transition-colors duration-200 no-underline"
+        >
+          {{ $t('package.dependencies.title', { count: sortedDependencies.length }) }}
+          <span
+            class="i-carbon-link w-3 h-3 block opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+            aria-hidden="true"
+          />
+        </a>
       </h2>
       <ul class="space-y-1 list-none m-0 p-0" :aria-label="$t('package.dependencies.list_label')">
         <li
@@ -75,6 +108,19 @@ const sortedOptionalDependencies = computed(() => {
               <span class="i-carbon-warning-alt w-3 h-3 block" />
             </span>
             <NuxtLink
+              v-if="getVulnerableDepInfo(dep)"
+              :to="{
+                name: 'package',
+                params: { package: [...dep.split('/'), 'v', getVulnerableDepInfo(dep)!.version] },
+              }"
+              class="shrink-0"
+              :class="SEVERITY_TEXT_COLORS[getHighestSeverity(getVulnerableDepInfo(dep)!.counts)]"
+              :title="`${getVulnerableDepInfo(dep)!.counts.total} vulnerabilities`"
+            >
+              <span class="i-carbon-security w-3 h-3 block" aria-hidden="true" />
+              <span class="sr-only">{{ $t('package.dependencies.view_vulnerabilities') }}</span>
+            </NuxtLink>
+            <NuxtLink
               :to="{ name: 'package', params: { package: [...dep.split('/'), 'v', version] } }"
               class="font-mono text-xs text-right truncate"
               :class="getVersionClass(outdatedDeps[dep])"
@@ -84,6 +130,9 @@ const sortedOptionalDependencies = computed(() => {
             </NuxtLink>
             <span v-if="outdatedDeps[dep]" class="sr-only">
               ({{ getOutdatedTooltip(outdatedDeps[dep]) }})
+            </span>
+            <span v-if="getVulnerableDepInfo(dep)" class="sr-only">
+              ({{ getVulnerableDepInfo(dep)!.counts.total }} vulnerabilities)
             </span>
           </span>
         </li>
@@ -99,12 +148,26 @@ const sortedOptionalDependencies = computed(() => {
     </section>
 
     <!-- Peer Dependencies -->
-    <section v-if="sortedPeerDependencies.length > 0" aria-labelledby="peer-dependencies-heading">
+    <section
+      id="peer-dependencies"
+      v-if="sortedPeerDependencies.length > 0"
+      aria-labelledby="peer-dependencies-heading"
+      class="scroll-mt-20"
+    >
       <h2
         id="peer-dependencies-heading"
-        class="text-xs text-fg-subtle uppercase tracking-wider mb-3"
+        class="group text-xs text-fg-subtle uppercase tracking-wider mb-3"
       >
-        {{ $t('package.peer_dependencies.title', { count: sortedPeerDependencies.length }) }}
+        <a
+          href="#peer-dependencies"
+          class="inline-flex items-center gap-1.5 text-fg-subtle hover:text-fg-muted transition-colors duration-200 no-underline"
+        >
+          {{ $t('package.peer_dependencies.title', { count: sortedPeerDependencies.length }) }}
+          <span
+            class="i-carbon-link w-3 h-3 block opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+            aria-hidden="true"
+          />
+        </a>
       </h2>
       <ul
         class="space-y-1 list-none m-0 p-0"
@@ -154,16 +217,27 @@ const sortedOptionalDependencies = computed(() => {
 
     <!-- Optional Dependencies -->
     <section
+      id="optional-dependencies"
       v-if="sortedOptionalDependencies.length > 0"
       aria-labelledby="optional-dependencies-heading"
+      class="scroll-mt-20"
     >
       <h2
         id="optional-dependencies-heading"
-        class="text-xs text-fg-subtle uppercase tracking-wider mb-3"
+        class="group text-xs text-fg-subtle uppercase tracking-wider mb-3"
       >
-        {{
-          $t('package.optional_dependencies.title', { count: sortedOptionalDependencies.length })
-        }}
+        <a
+          href="#optional-dependencies"
+          class="inline-flex items-center gap-1.5 text-fg-subtle hover:text-fg-muted transition-colors duration-200 no-underline"
+        >
+          {{
+            $t('package.optional_dependencies.title', { count: sortedOptionalDependencies.length })
+          }}
+          <span
+            class="i-carbon-link w-3 h-3 block opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+            aria-hidden="true"
+          />
+        </a>
       </h2>
       <ul
         class="space-y-1 list-none m-0 p-0"

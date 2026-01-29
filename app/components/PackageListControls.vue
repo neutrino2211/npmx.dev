@@ -19,8 +19,6 @@ const emit = defineEmits<{
   'update:sort': [value: SortOption]
 }>()
 
-const { t } = useI18n()
-
 const filterValue = computed({
   get: () => props.filter,
   set: value => emit('update:filter', value),
@@ -34,10 +32,10 @@ const sortValue = computed({
 const sortOptions = computed(
   () =>
     [
-      { value: 'downloads', label: t('package.sort.downloads') },
-      { value: 'updated', label: t('package.sort.updated') },
-      { value: 'name-asc', label: t('package.sort.name_asc') },
-      { value: 'name-desc', label: t('package.sort.name_desc') },
+      { value: 'downloads', label: $t('package.sort.downloads') },
+      { value: 'updated', label: $t('package.sort.updated') },
+      { value: 'name-asc', label: $t('package.sort.name_asc') },
+      { value: 'name-desc', label: $t('package.sort.name_desc') },
     ] as const,
 )
 
@@ -67,8 +65,8 @@ const showFilteredCount = computed(() => {
         id="package-filter"
         v-model="filterValue"
         type="search"
-        :placeholder="placeholder ?? t('package.list.filter_placeholder')"
-        autocomplete="off"
+        :placeholder="placeholder ?? $t('package.list.filter_placeholder')"
+        v-bind="noCorrect"
         class="w-full bg-bg-subtle border border-border rounded-lg pl-10 pr-4 py-2 font-mono text-sm text-fg placeholder:text-fg-subtle transition-colors duration-200 focus:(border-border-hover outline-none)"
       />
     </div>

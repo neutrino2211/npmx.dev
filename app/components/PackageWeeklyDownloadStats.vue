@@ -1,18 +1,82 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { VueUiSparkline } from 'vue-data-ui/vue-ui-sparkline'
+import { useCssVariables } from '../composables/useColors'
+import { OKLCH_NEUTRAL_FALLBACK, lightenOklch } from '../utils/colors'
 
 const { packageName } = defineProps<{
   packageName: string
 }>()
 
-const { t } = useI18n()
 const showModal = ref(false)
 
 const { data: packument } = usePackage(() => packageName)
 const createdIso = computed(() => packument.value?.time?.created ?? null)
 
 const { fetchPackageDownloadEvolution } = useCharts()
+
+const { accentColors, selectedAccentColor } = useAccentColor()
+
+const colorMode = useColorMode()
+
+const resolvedMode = ref<'light' | 'dark'>('light')
+
+const rootEl = shallowRef<HTMLElement | null>(null)
+
+onMounted(() => {
+  rootEl.value = document.documentElement
+  resolvedMode.value = colorMode.value === 'dark' ? 'dark' : 'light'
+})
+
+watch(
+  () => colorMode.value,
+  value => {
+    resolvedMode.value = value === 'dark' ? 'dark' : 'light'
+  },
+  { flush: 'sync' },
+)
+
+const { colors } = useCssVariables(
+  [
+    '--bg',
+    '--fg',
+    '--bg-subtle',
+    '--bg-elevated',
+    '--border-hover',
+    '--fg-subtle',
+    '--border',
+    '--border-subtle',
+  ],
+  {
+    element: rootEl,
+    watchHtmlAttributes: true,
+    watchResize: false, // set to true only if a var changes color on resize
+  },
+)
+
+const isDarkMode = computed(() => resolvedMode.value === 'dark')
+
+const accentColorValueById = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const item of accentColors) {
+    map[item.id] = item.value
+  }
+  return map
+})
+
+const accent = computed(() => {
+  const id = selectedAccentColor.value
+  return id
+    ? (accentColorValueById.value[id] ?? colors.value.fgSubtle ?? OKLCH_NEUTRAL_FALLBACK)
+    : (colors.value.fgSubtle ?? OKLCH_NEUTRAL_FALLBACK)
+})
+
+const pulseColor = computed(() => {
+  if (!selectedAccentColor.value) {
+    return colors.value.fgSubtle
+  }
+  return isDarkMode.value ? accent.value : lightenOklch(accent.value, 0.5)
+})
 
 const weeklyDownloads = ref<WeeklyDownloadPoint[]>([])
 
@@ -43,52 +107,90 @@ watch(
 const dataset = computed(() =>
   weeklyDownloads.value.map(d => ({
     value: d?.downloads ?? 0,
-    period: t('package.downloads.date_range', { start: d.weekStart ?? '-', end: d.weekEnd ?? '-' }),
+    period: $t('package.downloads.date_range', {
+      start: d.weekStart ?? '-',
+      end: d.weekEnd ?? '-',
+    }),
   })),
 )
 
 const lastDatapoint = computed(() => dataset.value.at(-1)?.period ?? '')
 
-const config = computed(() => ({
-  theme: 'dark',
-  style: {
-    backgroundColor: 'transparent',
-    animation: { show: false },
-    area: { color: '#6A6A6A', useGradient: false, opacity: 10 },
-    dataLabel: { offsetX: -10, fontSize: 28, bold: false, color: '#FAFAFA' },
-    line: {
-      color: '#6A6A6A',
-      pulse: {
-        show: true,
-        loop: true,
-        radius: 2,
-        color: '#8A8A8A',
-        easing: 'ease-in-out',
-        trail: { show: true, length: 6 },
+// oklh or css variables are not supported by vue-data-ui (for now)
+const config = computed(() => {
+  return {
+    theme: 'dark',
+    style: {
+      backgroundColor: 'transparent',
+      animation: { show: false },
+      area: {
+        color: colors.value.borderHover,
+        useGradient: false,
+        opacity: 10,
+      },
+      dataLabel: {
+        offsetX: -10,
+        fontSize: 28,
+        bold: false,
+        color: colors.value.fg,
+      },
+      line: {
+        color: colors.value.borderHover,
+        pulse: {
+          show: true,
+          loop: true, // runs only once if false
+          radius: 2,
+          color: pulseColor.value,
+          easing: 'ease-in-out',
+          trail: {
+            show: true,
+            length: 6,
+          },
+        },
+      },
+      plot: {
+        radius: 6,
+        stroke: isDarkMode.value ? 'oklch(0.985 0 0)' : 'oklch(0.145 0 0)',
+      },
+      title: {
+        text: lastDatapoint.value,
+        fontSize: 12,
+        color: colors.value.fgSubtle,
+        bold: false,
+      },
+      verticalIndicator: {
+        strokeDasharray: 0,
+        color: isDarkMode.value ? 'oklch(0.985 0 0)' : colors.value.fgSubtle,
       },
     },
-    plot: { radius: 6, stroke: '#FAFAFA' },
-    title: { text: lastDatapoint.value, fontSize: 12, color: '#8A8A8A', bold: false },
-    verticalIndicator: { strokeDasharray: 0, color: '#FAFAFA' },
-  },
-}))
+  }
+})
 </script>
 
 <template>
   <div class="space-y-8">
-    <section>
+    <section id="downloads" class="scroll-mt-20">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-xs text-fg-subtle uppercase tracking-wider">
-          {{ $t('package.downloads.title') }}
+        <h2 class="group text-xs text-fg-subtle uppercase tracking-wider">
+          <a
+            href="#downloads"
+            class="inline-flex items-center gap-1.5 text-fg-subtle hover:text-fg-muted transition-colors duration-200 no-underline"
+          >
+            {{ $t('package.downloads.title') }}
+            <span
+              class="i-carbon-link w-3 h-3 block opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+              aria-hidden="true"
+            />
+          </a>
         </h2>
         <button
           type="button"
           @click="showModal = true"
           class="link-subtle font-mono text-sm inline-flex items-center gap-1.5 ml-auto shrink-0 self-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50 rounded"
-          :title="t('package.downloads.analyze')"
+          :title="$t('package.downloads.analyze')"
         >
           <span class="i-carbon-data-analytics w-4 h-4" aria-hidden="true" />
-          <span class="sr-only">{{ t('package.downloads.analyze') }}</span>
+          <span class="sr-only">{{ $t('package.downloads.analyze') }}</span>
         </button>
       </div>
 
@@ -134,6 +236,19 @@ const config = computed(() => ({
       :packageName="packageName"
       :createdIso="createdIso"
     />
+
+    <template #after="{ close }">
+      <div class="sm:hidden flex justify-center">
+        <button
+          type="button"
+          @click="close"
+          class="w-12 h-12 bg-bg-elevated border border-border rounded-full shadow-lg flex items-center justify-center text-fg-muted hover:text-fg transition-colors"
+          :aria-label="$t('common.close')"
+        >
+          <span class="w-5 h-5 i-carbon-close" aria-hidden="true" />
+        </button>
+      </div>
+    </template>
   </ChartModal>
 </template>
 

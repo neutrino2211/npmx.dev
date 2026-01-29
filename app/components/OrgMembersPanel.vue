@@ -10,8 +10,6 @@ const emit = defineEmits<{
   'select-team': [teamName: string]
 }>()
 
-const { t } = useI18n()
-
 const {
   isConnected,
   lastExecutionTime,
@@ -309,7 +307,7 @@ watch(lastExecutionTime, () => {
       >
         <span
           class="i-carbon-renew block w-4 h-4"
-          :class="{ 'animate-spin': isLoading || isLoadingTeams }"
+          :class="{ 'motion-safe:animate-spin': isLoading || isLoadingTeams }"
           aria-hidden="true"
         />
       </button>
@@ -329,7 +327,7 @@ watch(lastExecutionTime, () => {
           type="search"
           name="members-search"
           :placeholder="$t('org.members.filter_placeholder')"
-          autocomplete="off"
+          v-bind="noCorrect"
           class="w-full pl-7 pr-2 py-1.5 font-mono text-sm bg-bg-subtle border border-border rounded text-fg placeholder:text-fg-subtle transition-colors duration-200 focus:border-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
         />
       </div>
@@ -347,7 +345,7 @@ watch(lastExecutionTime, () => {
           :aria-pressed="filterRole === role"
           @click="filterRole = role"
         >
-          {{ t(`org.members.role.${role}`) }}
+          {{ $t(`org.members.role.${role}`) }}
           <span v-if="role !== 'all'" class="text-fg-subtle">({{ roleCounts[role] }})</span>
         </button>
       </div>
@@ -465,9 +463,9 @@ watch(lastExecutionTime, () => {
                 )
               "
             >
-              <option value="developer">{{ t('org.members.role.developer') }}</option>
-              <option value="admin">{{ t('org.members.role.admin') }}</option>
-              <option value="owner">{{ t('org.members.role.owner') }}</option>
+              <option value="developer">{{ $t('org.members.role.developer') }}</option>
+              <option value="admin">{{ $t('org.members.role.admin') }}</option>
+              <option value="owner">{{ $t('org.members.role.owner') }}</option>
             </select>
             <!-- Remove button -->
             <button
@@ -514,8 +512,7 @@ watch(lastExecutionTime, () => {
             type="text"
             name="new-member-username"
             :placeholder="$t('org.members.username_placeholder')"
-            autocomplete="off"
-            spellcheck="false"
+            v-bind="noCorrect"
             class="w-full px-2 py-1.5 font-mono text-sm bg-bg border border-border rounded text-fg placeholder:text-fg-subtle transition-colors duration-200 focus:border-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
           />
           <div class="flex items-center gap-2">
@@ -526,9 +523,9 @@ watch(lastExecutionTime, () => {
               name="new-member-role"
               class="flex-1 px-2 py-1.5 font-mono text-sm bg-bg border border-border rounded text-fg transition-colors duration-200 focus:border-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
             >
-              <option value="developer">{{ t('org.members.role.developer') }}</option>
-              <option value="admin">{{ t('org.members.role.admin') }}</option>
-              <option value="owner">{{ t('org.members.role.owner') }}</option>
+              <option value="developer">{{ $t('org.members.role.developer') }}</option>
+              <option value="admin">{{ $t('org.members.role.admin') }}</option>
+              <option value="owner">{{ $t('org.members.role.owner') }}</option>
             </select>
             <!-- Team selection -->
             <label for="new-member-team" class="sr-only">{{ $t('org.members.team_label') }}</label>

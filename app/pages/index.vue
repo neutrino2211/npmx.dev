@@ -1,19 +1,26 @@
 <script setup lang="ts">
+import { debounce } from 'perfect-debounce'
+
 const router = useRouter()
 const searchQuery = ref('')
-const isSearchFocused = ref(false)
+const searchInputRef = useTemplateRef('searchInputRef')
+const { focused: isSearchFocused } = useFocus(searchInputRef)
 
-function handleSearch() {
+const debouncedNavigate = debounce(() => {
   router.push({
     path: '/search',
     query: searchQuery.value.trim() ? { q: searchQuery.value.trim() } : undefined,
   })
+}, 250)
+
+function handleSearch() {
+  // If input is empty, navigate immediately (no need to debounce)
+  return searchQuery.value.trim() ? debouncedNavigate() : router.push('/search')
 }
 
-const { t } = useI18n()
 useSeoMeta({
-  title: () => t('seo.home.title'),
-  description: () => t('seo.home.description'),
+  title: () => $t('seo.home.title'),
+  description: () => $t('seo.home.description'),
 })
 
 defineOgImageComponent('Default')
@@ -25,13 +32,13 @@ defineOgImageComponent('Default')
     <header class="flex-1 flex flex-col items-center justify-center text-center py-20">
       <!-- Animated title -->
       <h1
-        class="font-mono text-5xl sm:text-7xl md:text-8xl font-medium tracking-tight mb-4 animate-fade-in animate-fill-both"
+        class="font-mono text-5xl sm:text-7xl md:text-8xl font-medium tracking-tight mb-4 motion-safe:animate-fade-in motion-safe:animate-fill-both"
       >
         <span class="text-accent"><span class="-tracking-0.2em">.</span>/</span>npmx
       </h1>
 
       <p
-        class="text-fg-muted text-lg sm:text-xl max-w-md mb-12 animate-slide-up animate-fill-both"
+        class="text-fg-muted text-lg sm:text-xl max-w-md mb-12 motion-safe:animate-slide-up motion-safe:animate-fill-both"
         style="animation-delay: 0.1s"
       >
         {{ $t('tagline') }}
@@ -39,10 +46,16 @@ defineOgImageComponent('Default')
 
       <!-- Search form with micro-interactions -->
       <search
-        class="w-full max-w-xl animate-slide-up animate-fill-both"
+        class="w-full max-w-xl motion-safe:animate-slide-up motion-safe:animate-fill-both"
         style="animation-delay: 0.2s"
       >
-        <form role="search" class="relative" @submit.prevent="handleSearch">
+        <form
+          role="search"
+          method="GET"
+          action="/search"
+          class="relative"
+          @submit.prevent="handleSearch"
+        >
           <label for="home-search" class="sr-only">
             {{ $t('search.label') }}
           </label>
@@ -63,21 +76,20 @@ defineOgImageComponent('Default')
 
               <input
                 id="home-search"
+                ref="searchInputRef"
                 v-model="searchQuery"
                 type="search"
                 name="q"
                 :placeholder="$t('search.placeholder')"
-                autocomplete="off"
+                v-bind="noCorrect"
                 autofocus
-                class="w-full bg-bg-subtle border border-border rounded-lg pl-8 pr-24 py-4 font-mono text-base text-fg placeholder:text-fg-subtle transition-all duration-300 focus:(border-accent outline-none)"
+                class="w-full bg-bg-subtle border border-border rounded-lg pl-8 pr-24 py-4 font-mono text-base text-fg placeholder:text-fg-subtle transition-border-color duration-300 focus:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
                 @input="handleSearch"
-                @focus="isSearchFocused = true"
-                @blur="isSearchFocused = false"
               />
 
               <button
                 type="submit"
-                class="absolute right-2 px-4 py-2 font-mono text-sm text-bg bg-fg rounded-md transition-all duration-200 hover:bg-fg/90 active:scale-95"
+                class="absolute right-2 px-4 py-2 font-mono text-sm text-bg bg-fg rounded-md transition-[background-color,transform] duration-200 hover:bg-fg/90 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/50"
               >
                 {{ $t('search.button') }}
               </button>
@@ -90,7 +102,7 @@ defineOgImageComponent('Default')
     <!-- Popular packages -->
     <nav
       :aria-label="$t('nav.popular_packages')"
-      class="pb-20 text-center animate-fade-in animate-fill-both"
+      class="pt-4 pb-36 sm:pb-40 text-center motion-safe:animate-fade-in motion-safe:animate-fill-both"
       style="animation-delay: 0.3s"
     >
       <ul class="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 list-none m-0 p-0">

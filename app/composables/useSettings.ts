@@ -14,12 +14,15 @@ export interface AppSettings {
   includeTypesInInstall: boolean
   /** Accent color theme */
   accentColorId: AccentColorId | null
+  /** Hide platform-specific packages (e.g., @scope/pkg-linux-x64) from search results */
+  hidePlatformPackages: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   relativeDates: false,
   includeTypesInInstall: true,
   accentColorId: null,
+  hidePlatformPackages: true,
 }
 
 const STORAGE_KEY = 'npmx-settings'
@@ -46,6 +49,7 @@ export function useSettings() {
 /**
  * Composable for accessing just the relative dates setting.
  * Useful for components that only need to read this specific setting.
+ * @public
  */
 export function useRelativeDates() {
   const { settings } = useSettings()
@@ -84,18 +88,19 @@ export function useAccentColor() {
 /**
  * Applies accent color before hydration to prevent flash of default color.
  * Call this from app.vue to ensure accent color is applied on every page.
+ * @public
  */
 export function initAccentOnPrehydrate() {
   // Callback is stringified by Nuxt - external variables won't be available.
   // Colors must be hardcoded since ACCENT_COLORS can't be referenced.
   onPrehydrate(() => {
     const colors: Record<AccentColorId, string> = {
-      rose: '#e9aeba',
-      amber: '#fbbf24',
-      emerald: '#34d399',
-      sky: '#38bdf8',
-      violet: '#a78bfa',
-      coral: '#fb7185',
+      rose: 'oklch(0.797 0.084 11.056)',
+      amber: 'oklch(0.828 0.165 84.429)',
+      emerald: 'oklch(0.792 0.153 166.95)',
+      sky: 'oklch(0.787 0.128 230.318)',
+      violet: 'oklch(0.714 0.148 286.067)',
+      coral: 'oklch(0.704 0.177 14.75)',
     }
     const settings = JSON.parse(localStorage.getItem('npmx-settings') || '{}')
     const color = settings.accentColorId ? colors[settings.accentColorId as AccentColorId] : null

@@ -6,11 +6,12 @@ import {
   buildVersionToTagsMap,
   filterExcludedTags,
   getPrereleaseChannel,
+  getVersionGroupKey,
+  getVersionGroupLabel,
+  isSameVersionGroup,
   parseVersion,
 } from '~/utils/versions'
 import { fetchAllPackageVersions } from '~/composables/useNpmRegistry'
-
-const { t } = useI18n()
 
 const props = defineProps<{
   packageName: string
@@ -122,8 +123,10 @@ const tagVersions = ref<Map<string, VersionDisplay[]>>(new Map())
 const loadingTags = ref<Set<string>>(new Set())
 
 const otherVersionsExpanded = shallowRef(false)
-const expandedMajorGroups = ref<Set<number>>(new Set())
-const otherMajorGroups = shallowRef<Array<{ major: number; versions: VersionDisplay[] }>>([])
+const expandedMajorGroups = ref<Set<string>>(new Set())
+const otherMajorGroups = shallowRef<
+  Array<{ groupKey: string; label: string; versions: VersionDisplay[] }>
+>([])
 const otherVersionsLoading = shallowRef(false)
 
 // Cached full version list (local to component instance)
@@ -169,14 +172,14 @@ function processLoadedVersions(allVersions: PackageVersionInfo[]) {
     const tagVersion = distTags[row.tag]
     if (!tagVersion) continue
 
-    const tagParsed = parseVersion(tagVersion)
     const tagChannel = getPrereleaseChannel(tagVersion)
 
+    // Find all versions in the same version group + prerelease channel
+    // For 0.x versions, this means same major.minor; for 1.x+, same major
     const channelVersions = allVersions
       .filter(v => {
-        const vParsed = parseVersion(v.version)
         const vChannel = getPrereleaseChannel(v.version)
-        return vParsed.major === tagParsed.major && vChannel === tagChannel
+        return isSameVersionGroup(v.version, tagVersion) && vChannel === tagChannel
       })
       .sort((a, b) => compare(b.version, a.version))
       .map(v => ({
@@ -194,17 +197,19 @@ function processLoadedVersions(allVersions: PackageVersionInfo[]) {
     }
   }
 
-  // Group unclaimed versions by major
-  const byMajor = new Map<number, VersionDisplay[]>()
+  // Group unclaimed versions by version group key
+  // For 0.x versions, group by major.minor (e.g., "0.9", "0.10")
+  // For 1.x+, group by major (e.g., "1", "2")
+  const byGroupKey = new Map<string, VersionDisplay[]>()
 
   for (const v of allVersions) {
     if (claimedVersions.has(v.version)) continue
 
-    const major = parseVersion(v.version).major
-    if (!byMajor.has(major)) {
-      byMajor.set(major, [])
+    const groupKey = getVersionGroupKey(v.version)
+    if (!byGroupKey.has(groupKey)) {
+      byGroupKey.set(groupKey, [])
     }
-    byMajor.get(major)!.push({
+    byGroupKey.get(groupKey)!.push({
       version: v.version,
       time: v.time,
       tags: versionToTags.value.get(v.version),
@@ -213,16 +218,23 @@ function processLoadedVersions(allVersions: PackageVersionInfo[]) {
     })
   }
 
-  // Sort within each major
-  for (const versions of byMajor.values()) {
+  // Sort within each group
+  for (const versions of byGroupKey.values()) {
     versions.sort((a, b) => compare(b.version, a.version))
   }
 
-  // Build major groups sorted by major descending
-  const sortedMajors = Array.from(byMajor.keys()).sort((a, b) => b - a)
-  otherMajorGroups.value = sortedMajors.map(major => ({
-    major,
-    versions: byMajor.get(major)!,
+  // Build groups sorted by group key descending
+  // Sort: "2", "1", "0.10", "0.9" (numerically descending)
+  const sortedGroupKeys = Array.from(byGroupKey.keys()).sort((a, b) => {
+    const [aMajor, aMinor] = a.split('.').map(Number)
+    const [bMajor, bMinor] = b.split('.').map(Number)
+    if (aMajor !== bMajor) return (bMajor ?? 0) - (aMajor ?? 0)
+    return (bMinor ?? -1) - (aMinor ?? -1)
+  })
+  otherMajorGroups.value = sortedGroupKeys.map(groupKey => ({
+    groupKey,
+    label: getVersionGroupLabel(groupKey),
+    versions: byGroupKey.get(groupKey)!,
   }))
   expandedMajorGroups.value.clear()
 }
@@ -277,12 +289,12 @@ async function expandOtherVersions() {
   otherVersionsExpanded.value = true
 }
 
-// Toggle a major group
-function toggleMajorGroup(major: number) {
-  if (expandedMajorGroups.value.has(major)) {
-    expandedMajorGroups.value.delete(major)
+// Toggle a version group
+function toggleMajorGroup(groupKey: string) {
+  if (expandedMajorGroups.value.has(groupKey)) {
+    expandedMajorGroups.value.delete(groupKey)
   } else {
-    expandedMajorGroups.value.add(major)
+    expandedMajorGroups.value.add(groupKey)
   }
 }
 
@@ -293,9 +305,23 @@ function getTagVersions(tag: string): VersionDisplay[] {
 </script>
 
 <template>
-  <section v-if="allTagRows.length > 0" aria-labelledby="versions-heading" class="overflow-hidden">
-    <h2 id="versions-heading" class="text-xs text-fg-subtle uppercase tracking-wider mb-3">
-      {{ $t('package.versions.title') }}
+  <section
+    id="versions"
+    v-if="allTagRows.length > 0"
+    aria-labelledby="versions-heading"
+    class="overflow-hidden scroll-mt-20"
+  >
+    <h2 id="versions-heading" class="group text-xs text-fg-subtle uppercase tracking-wider mb-3">
+      <a
+        href="#versions"
+        class="inline-flex items-center gap-1.5 text-fg-subtle hover:text-fg-muted transition-colors duration-200 no-underline"
+      >
+        {{ $t('package.versions.title') }}
+        <span
+          class="i-carbon-link w-3 h-3 block opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          aria-hidden="true"
+        />
+      </a>
     </h2>
 
     <div class="space-y-0.5 min-w-0">
@@ -317,7 +343,8 @@ function getTagVersions(tag: string): VersionDisplay[] {
           >
             <span
               v-if="loadingTags.has(row.tag)"
-              class="i-carbon-rotate-180 w-3 h-3 animate-spin"
+              class="i-carbon-rotate-180 w-3 h-3 motion-safe:animate-spin"
+              data-testid="loading-spinner"
               aria-hidden="true"
             />
             <span
@@ -344,7 +371,7 @@ function getTagVersions(tag: string): VersionDisplay[] {
                 "
                 :title="
                   row.primaryVersion.deprecated
-                    ? t('package.versions.deprecated_title', {
+                    ? $t('package.versions.deprecated_title', {
                         version: row.primaryVersion.version,
                       })
                     : row.primaryVersion.version
@@ -399,7 +426,7 @@ function getTagVersions(tag: string): VersionDisplay[] {
                 "
                 :title="
                   v.deprecated
-                    ? t('package.versions.deprecated_title', { version: v.version })
+                    ? $t('package.versions.deprecated_title', { version: v.version })
                     : v.version
                 "
               >
@@ -457,7 +484,8 @@ function getTagVersions(tag: string): VersionDisplay[] {
           >
             <span
               v-if="otherVersionsLoading"
-              class="i-carbon-rotate-180 w-3 h-3 animate-spin"
+              class="i-carbon-rotate-180 w-3 h-3 motion-safe:animate-spin"
+              data-testid="loading-spinner"
               aria-hidden="true"
             />
             <span
@@ -490,7 +518,7 @@ function getTagVersions(tag: string): VersionDisplay[] {
                 "
                 :title="
                   row.primaryVersion.deprecated
-                    ? t('package.versions.deprecated_title', {
+                    ? $t('package.versions.deprecated_title', {
                         version: row.primaryVersion.version,
                       })
                     : row.primaryVersion.version
@@ -521,28 +549,28 @@ function getTagVersions(tag: string): VersionDisplay[] {
             </div>
           </div>
 
-          <!-- Major version groups (untagged versions) -->
+          <!-- Version groups (untagged versions) -->
           <template v-if="otherMajorGroups.length > 0">
-            <div v-for="group in otherMajorGroups" :key="group.major">
-              <!-- Major group header -->
+            <div v-for="group in otherMajorGroups" :key="group.groupKey">
+              <!-- Version group header -->
               <div v-if="group.versions.length > 1" class="py-1">
                 <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2 min-w-0">
                     <button
                       type="button"
                       class="w-4 h-4 flex items-center justify-center text-fg-subtle hover:text-fg transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg-muted focus-visible:ring-offset-1 focus-visible:ring-offset-bg rounded-sm"
-                      :aria-expanded="expandedMajorGroups.has(group.major)"
+                      :aria-expanded="expandedMajorGroups.has(group.groupKey)"
                       :aria-label="
-                        expandedMajorGroups.has(group.major)
-                          ? $t('package.versions.collapse_major', { major: group.major })
-                          : $t('package.versions.expand_major', { major: group.major })
+                        expandedMajorGroups.has(group.groupKey)
+                          ? $t('package.versions.collapse_major', { major: group.label })
+                          : $t('package.versions.expand_major', { major: group.label })
                       "
-                      @click="toggleMajorGroup(group.major)"
+                      @click="toggleMajorGroup(group.groupKey)"
                     >
                       <span
                         class="w-3 h-3 transition-transform duration-200"
                         :class="
-                          expandedMajorGroups.has(group.major)
+                          expandedMajorGroups.has(group.groupKey)
                             ? 'i-carbon-chevron-down'
                             : 'i-carbon-chevron-right'
                         "
@@ -560,7 +588,7 @@ function getTagVersions(tag: string): VersionDisplay[] {
                       "
                       :title="
                         group.versions[0]?.deprecated
-                          ? t('package.versions.deprecated_title', {
+                          ? $t('package.versions.deprecated_title', {
                               version: group.versions[0]?.version,
                             })
                           : group.versions[0]?.version
@@ -616,7 +644,7 @@ function getTagVersions(tag: string): VersionDisplay[] {
                       "
                       :title="
                         group.versions[0]?.deprecated
-                          ? t('package.versions.deprecated_title', {
+                          ? $t('package.versions.deprecated_title', {
                               version: group.versions[0]?.version,
                             })
                           : group.versions[0]?.version
@@ -653,9 +681,9 @@ function getTagVersions(tag: string): VersionDisplay[] {
                 </div>
               </div>
 
-              <!-- Major group versions -->
+              <!-- Version group versions -->
               <div
-                v-if="expandedMajorGroups.has(group.major) && group.versions.length > 1"
+                v-if="expandedMajorGroups.has(group.groupKey) && group.versions.length > 1"
                 class="ml-6 space-y-0.5"
               >
                 <div v-for="v in group.versions.slice(1)" :key="v.version" class="py-1">
@@ -670,7 +698,7 @@ function getTagVersions(tag: string): VersionDisplay[] {
                       "
                       :title="
                         v.deprecated
-                          ? t('package.versions.deprecated_title', { version: v.version })
+                          ? $t('package.versions.deprecated_title', { version: v.version })
                           : v.version
                       "
                     >

@@ -2,9 +2,9 @@
 import { ref, computed, shallowRef, watch } from 'vue'
 import type { VueUiXyDatasetItem } from 'vue-data-ui'
 import { VueUiXy } from 'vue-data-ui/vue-ui-xy'
-import { useDebounceFn } from '@vueuse/core'
-
-const { t } = useI18n()
+import { useDebounceFn, useElementSize } from '@vueuse/core'
+import { useCssVariables } from '../composables/useColors'
+import { OKLCH_NEUTRAL_FALLBACK, transparentizeOklch } from '../utils/colors'
 
 const {
   weeklyDownloads,
@@ -17,6 +17,60 @@ const {
   packageName: string
   createdIso: string | null
 }>()
+
+const { accentColors, selectedAccentColor } = useAccentColor()
+const colorMode = useColorMode()
+const resolvedMode = ref<'light' | 'dark'>('light')
+const rootEl = shallowRef<HTMLElement | null>(null)
+
+const { width } = useElementSize(rootEl)
+
+onMounted(() => {
+  rootEl.value = document.documentElement
+  resolvedMode.value = colorMode.value === 'dark' ? 'dark' : 'light'
+})
+
+const { colors } = useCssVariables(
+  ['--bg', '--bg-subtle', '--bg-elevated', '--fg-subtle', '--border', '--border-subtle'],
+  {
+    element: rootEl,
+    watchHtmlAttributes: true,
+    watchResize: false, // set to true only if a var changes color on resize
+  },
+)
+
+watch(
+  () => colorMode.value,
+  value => {
+    resolvedMode.value = value === 'dark' ? 'dark' : 'light'
+  },
+  { flush: 'sync' },
+)
+
+const isDarkMode = computed(() => resolvedMode.value === 'dark')
+
+// oklh or css variables are not supported by vue-data-ui (for now)
+
+const accentColorValueById = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const item of accentColors) {
+    map[item.id] = item.value
+  }
+  return map
+})
+
+const accent = computed(() => {
+  const id = selectedAccentColor.value
+  return id
+    ? (accentColorValueById.value[id] ?? colors.value.fgSubtle ?? OKLCH_NEUTRAL_FALLBACK)
+    : (colors.value.fgSubtle ?? OKLCH_NEUTRAL_FALLBACK)
+})
+
+const mobileBreakpointWidth = 640
+
+const isMobile = computed(() => {
+  return width.value > 0 && width.value < mobileBreakpointWidth
+})
 
 type ChartTimeGranularity = 'daily' | 'weekly' | 'monthly' | 'yearly'
 type EvolutionData =
@@ -83,7 +137,7 @@ function formatXyDataset(
           name: packageName,
           type: 'line',
           series: dataset.map(d => d.downloads),
-          color: '#8A8A8A',
+          color: accent.value,
         },
       ],
       dates: dataset.map(d => `${d.weekStart}\nto ${d.weekEnd}`),
@@ -96,7 +150,7 @@ function formatXyDataset(
           name: packageName,
           type: 'line',
           series: dataset.map(d => d.downloads),
-          color: '#8A8A8A',
+          color: accent.value,
         },
       ],
       dates: dataset.map(d => d.day),
@@ -109,7 +163,7 @@ function formatXyDataset(
           name: packageName,
           type: 'line',
           series: dataset.map(d => d.downloads),
-          color: '#8A8A8A',
+          color: accent.value,
         },
       ],
       dates: dataset.map(d => d.month),
@@ -122,7 +176,7 @@ function formatXyDataset(
           name: packageName,
           type: 'line',
           series: dataset.map(d => d.downloads),
-          color: '#8A8A8A',
+          color: accent.value,
         },
       ],
       dates: dataset.map(d => d.year),
@@ -145,6 +199,16 @@ function safeMin(a: string, b: string): string {
 
 function safeMax(a: string, b: string): string {
   return a.localeCompare(b) >= 0 ? a : b
+}
+
+function extractDates(dateLabel: string) {
+  if (typeof dateLabel !== 'string') return []
+
+  const parts = dateLabel.trim().split(/\s+/).filter(Boolean)
+
+  if (parts.length < 2) return []
+
+  return [parts[0], parts[parts.length - 1]]
 }
 
 /**
@@ -382,78 +446,135 @@ const chartData = computed<{ dataset: VueUiXyDatasetItem[] | null; dates: string
 
 const formatter = ({ value }: { value: number }) => formatCompactNumber(value, { decimals: 1 })
 
-const config = computed(() => ({
-  theme: 'dark',
-  chart: {
-    userOptions: {
-      buttons: {
-        pdf: false,
-        labels: false,
-        fullscreen: false,
-        table: false,
-        tooltip: false,
+const loadFile = (link: string, filename: string) => {
+  const a = document.createElement('a')
+  a.href = link
+  a.download = filename
+  a.click()
+  a.remove()
+}
+
+const config = computed(() => {
+  return {
+    theme: isDarkMode.value ? 'dark' : 'default',
+    chart: {
+      height: isMobile.value ? 850 : 600,
+      userOptions: {
+        buttons: {
+          pdf: false,
+          labels: false,
+          fullscreen: false,
+          table: false,
+          tooltip: false,
+        },
+        buttonTitles: {
+          csv: $t('package.downloads.download_file', { fileType: 'CSV' }),
+          img: $t('package.downloads.download_file', { fileType: 'PNG' }),
+          svg: $t('package.downloads.download_file', { fileType: 'SVG' }),
+          annotator: $t('package.downloads.toggle_annotator'),
+        },
+        callbacks: {
+          img: ({ imageUri }: { imageUri: string }) => {
+            loadFile(
+              imageUri,
+              `${packageName}-${selectedGranularity.value}_${startDate.value}_${endDate.value}.png`,
+            )
+          },
+          csv: (csvStr: string) => {
+            const blob = new Blob([csvStr.replace('data:text/csv;charset=utf-8,', '')])
+            const url = URL.createObjectURL(blob)
+            loadFile(
+              url,
+              `${packageName}-${selectedGranularity.value}_${startDate.value}_${endDate.value}.csv`,
+            )
+            URL.revokeObjectURL(url)
+          },
+          svg: ({ blob }: { blob: Blob }) => {
+            const url = URL.createObjectURL(blob)
+            loadFile(
+              url,
+              `${packageName}-${selectedGranularity.value}_${startDate.value}_${endDate.value}.svg`,
+            )
+            URL.revokeObjectURL(url)
+          },
+        },
       },
-    },
-    backgroundColor: '#0A0A0A', // current default dark mode theme,
-    grid: {
-      labels: {
-        axis: {
-          yLabel: t('package.downloads.y_axis_label', { granularity: selectedGranularity.value }),
-          xLabel: packageName,
-          yLabelOffsetX: 12,
-          fontSize: 24,
-        },
-        xAxisLabels: {
-          values: chartData.value?.dates,
-          showOnlyAtModulo: true,
-          modulo: 12,
-        },
-        yAxis: {
-          formatter,
-          useNiceScale: true,
+      backgroundColor: colors.value.bg,
+      grid: {
+        stroke: colors.value.border,
+        labels: {
+          axis: {
+            yLabel: $t('package.downloads.y_axis_label', {
+              granularity: $t(`package.downloads.granularity_${selectedGranularity.value}`),
+            }),
+            xLabel: packageName,
+            yLabelOffsetX: 12,
+            fontSize: 24,
+          },
+          xAxisLabels: {
+            values: chartData.value?.dates,
+            showOnlyAtModulo: true,
+            modulo: 12,
+          },
+          yAxis: {
+            formatter,
+            useNiceScale: true,
+          },
         },
       },
-    },
-    highlighter: {
-      useLine: true,
-    },
-    legend: {
-      show: false, // As long as a single package is displayed
-    },
-    tooltip: {
-      borderColor: '#2A2A2A',
-      customFormat: ({
-        absoluteIndex,
-        datapoint,
-      }: {
-        absoluteIndex: number
-        datapoint: Record<string, any>
-      }) => {
-        if (!datapoint) return ''
-        const displayValue = formatter({ value: datapoint[0]?.value ?? 0 })
-        return `<div class="flex flex-col font-mono text-xs p-3">
+      highlighter: {
+        useLine: true,
+      },
+      legend: {
+        show: false, // As long as a single package is displayed
+      },
+      tooltip: {
+        borderColor: 'transparent',
+        backdropFilter: false,
+        backgroundColor: 'transparent',
+        customFormat: ({
+          absoluteIndex,
+          datapoint,
+        }: {
+          absoluteIndex: number
+          datapoint: Record<string, any>
+        }) => {
+          if (!datapoint) return ''
+          const displayValue = formatter({ value: datapoint[0]?.value ?? 0 })
+          return `<div class="flex flex-col font-mono text-xs p-3 border border-border rounded-md bg-[var(--bg)]/10 backdrop-blur-md">
           <span class="text-fg-subtle">${chartData.value?.dates[absoluteIndex]}</span>
           <span class="text-xl">${displayValue}</span>
         </div>
         `
+        },
+      },
+      zoom: {
+        maxWidth: 500,
+        customFormat:
+          displayedGranularity.value !== 'weekly'
+            ? undefined
+            : ({ absoluteIndex, side }: { absoluteIndex: number; side: 'left' | 'right' }) => {
+                const parts = extractDates(chartData.value.dates[absoluteIndex] ?? '')
+                return side === 'left' ? parts[0] : parts.at(-1)
+              },
+        highlightColor: colors.value.bgElevated,
+        minimap: {
+          show: true,
+          lineColor: '#FAFAFA',
+          selectedColor: accent.value,
+          selectedColorOpacity: 0.06,
+          frameColor: colors.value.border,
+        },
+        preview: {
+          fill: transparentizeOklch(accent.value, isDarkMode.value ? 0.95 : 0.92),
+          stroke: transparentizeOklch(accent.value, 0.5),
+          strokeWidth: 1,
+          strokeDasharray: 3,
+        },
       },
     },
-    zoom: {
-      highlightColor: '#2A2A2A',
-      minimap: {
-        show: true,
-        lineColor: '#FAFAFA',
-        selectedColorOpacity: 0.1,
-        frameColor: '#3A3A3A',
-      },
-      preview: {
-        fill: '#FAFAFA05',
-        strokeWidth: 1,
-        strokeDasharray: 3,
-      },
-    },
-  },
-}))
+  }
+})
 </script>
 
 <template>
@@ -467,21 +588,21 @@ const config = computed(() => ({
             for="granularity"
             class="text-[10px] font-mono text-fg-subtle tracking-wide uppercase"
           >
-            {{ t('package.downloads.granularity') }}
+            {{ $t('package.downloads.granularity') }}
           </label>
 
           <div
-            class="flex items-center px-2.5 py-1.75 bg-bg-subtle border border-border rounded-md focus-within:(border-border-hover ring-2 ring-fg/50)"
+            class="flex items-center px-2.5 py-1.75 bg-bg-subtle border border-border rounded-md focus-within:(border-border-hover ring-2 ring-accent/30)"
           >
             <select
               id="granularity"
               v-model="selectedGranularity"
-              class="w-full bg-transparent font-mono text-sm text-fg outline-none"
+              class="w-full bg-transparent font-mono text-sm text-fg outline-none appearance-none"
             >
-              <option value="daily">{{ t('package.downloads.granularity_daily') }}</option>
-              <option value="weekly">{{ t('package.downloads.granularity_weekly') }}</option>
-              <option value="monthly">{{ t('package.downloads.granularity_monthly') }}</option>
-              <option value="yearly">{{ t('package.downloads.granularity_yearly') }}</option>
+              <option value="daily">{{ $t('package.downloads.granularity_daily') }}</option>
+              <option value="weekly">{{ $t('package.downloads.granularity_weekly') }}</option>
+              <option value="monthly">{{ $t('package.downloads.granularity_monthly') }}</option>
+              <option value="yearly">{{ $t('package.downloads.granularity_yearly') }}</option>
             </select>
           </div>
         </div>
@@ -493,10 +614,10 @@ const config = computed(() => ({
               for="startDate"
               class="text-[10px] font-mono text-fg-subtle tracking-wide uppercase"
             >
-              {{ t('package.downloads.start_date') }}
+              {{ $t('package.downloads.start_date') }}
             </label>
             <div
-              class="flex items-center gap-2 px-2.5 py-1.75 bg-bg-subtle border border-border rounded-md focus-within:(border-border-hover ring-2 ring-fg/50)"
+              class="flex items-center gap-2 px-2.5 py-1.75 bg-bg-subtle border border-border rounded-md focus-within:(border-border-hover ring-2 ring-accent/30)"
             >
               <span class="i-carbon-calendar w-4 h-4 text-fg-subtle shrink-0" aria-hidden="true" />
               <input
@@ -513,10 +634,10 @@ const config = computed(() => ({
               for="endDate"
               class="text-[10px] font-mono text-fg-subtle tracking-wide uppercase"
             >
-              {{ t('package.downloads.end_date') }}
+              {{ $t('package.downloads.end_date') }}
             </label>
             <div
-              class="flex items-center gap-2 px-2.5 py-1.75 bg-bg-subtle border border-border rounded-md focus-within:(border-border-hover ring-2 ring-fg/50)"
+              class="flex items-center gap-2 px-2.5 py-1.75 bg-bg-subtle border border-border rounded-md focus-within:(border-border-hover ring-2 ring-accent/30)"
             >
               <span class="i-carbon-calendar w-4 h-4 text-fg-subtle shrink-0" aria-hidden="true" />
               <input
@@ -634,7 +755,7 @@ const config = computed(() => ({
       v-if="inModal && !chartData.dataset && !pending"
       class="min-h-[260px] flex items-center justify-center text-fg-subtle font-mono text-sm"
     >
-      {{ t('package.downloads.no_data') }}
+      {{ $t('package.downloads.no_data') }}
     </div>
 
     <div
@@ -643,27 +764,23 @@ const config = computed(() => ({
       aria-live="polite"
       class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs text-fg-subtle font-mono bg-bg/70 backdrop-blur px-3 py-2 rounded-md border border-border"
     >
-      {{ t('package.downloads.loading') }}
+      {{ $t('package.downloads.loading') }}
     </div>
   </div>
 </template>
 
 <style>
 .vue-ui-pen-and-paper-actions {
-  background: #1a1a1a !important;
+  background: var(--bg-elevated) !important;
 }
 
 .vue-ui-pen-and-paper-action {
-  background: #1a1a1a !important;
+  background: var(--bg-elevated) !important;
   border: none !important;
 }
 
 .vue-ui-pen-and-paper-action:hover {
-  background: #2a2a2a !important;
-}
-
-.vue-data-ui-zoom {
-  max-width: 500px;
-  margin: 0 auto;
+  background: var(--bg-elevated) !important;
+  box-shadow: none !important;
 }
 </style>

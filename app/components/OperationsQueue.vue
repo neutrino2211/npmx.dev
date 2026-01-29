@@ -103,19 +103,14 @@ function getStatusIcon(status: string): string {
 }
 
 // Auto-refresh while executing
-let refreshInterval: ReturnType<typeof setInterval> | null = null
+const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(() => refreshState(), 1000, {
+  immediate: false,
+})
 watch(isExecuting, executing => {
   if (executing) {
-    refreshInterval = setInterval(() => refreshState(), 1000)
-  } else if (refreshInterval) {
-    clearInterval(refreshInterval)
-    refreshInterval = null
-  }
-})
-
-onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
+    resumeRefresh()
+  } else {
+    pauseRefresh()
   }
 })
 </script>
@@ -198,7 +193,7 @@ onUnmounted(() => {
           <!-- Result output for completed/failed -->
           <div
             v-else-if="op.result && (op.status === 'completed' || op.status === 'failed')"
-            class="mt-2 p-2 bg-[#0d0d0d] border border-border rounded text-xs font-mono"
+            class="mt-2 p-2 bg-bg-muted border border-border rounded text-xs font-mono"
           >
             <pre v-if="op.result.stdout" class="text-fg-muted whitespace-pre-wrap">{{
               op.result.stdout
