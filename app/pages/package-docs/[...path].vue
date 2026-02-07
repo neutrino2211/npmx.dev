@@ -46,8 +46,12 @@ if (import.meta.server && !requestedVersion.value && packageName.value) {
   const version = await fetchLatestVersion(packageName.value)
   if (version) {
     setResponseHeader(useRequestEvent()!, 'Cache-Control', 'no-cache')
+    const pathSegments = [...packageName.value.split('/'), 'v', version]
     app.runWithContext(() =>
-      navigateTo('/package-docs/' + packageName.value + '/v/' + version, { redirectCode: 302 }),
+      navigateTo(
+        { name: 'docs', params: { path: pathSegments as [string, ...string[]] } },
+        { redirectCode: 302 },
+      ),
     )
   }
 }
@@ -56,7 +60,8 @@ watch(
   [requestedVersion, latestVersion, packageName],
   ([version, latest, name]) => {
     if (!version && latest && name) {
-      router.replace(`/package-docs/${name}/v/${latest}`)
+      const pathSegments = [...name.split('/'), 'v', latest]
+      router.replace({ name: 'docs', params: { path: pathSegments as [string, ...string[]] } })
     }
   },
   { immediate: true },
@@ -95,6 +100,11 @@ const pageTitle = computed(() => {
 
 useSeoMeta({
   title: () => pageTitle.value,
+  ogTitle: () => pageTitle.value,
+  twitterTitle: () => pageTitle.value,
+  description: () => pkg.value?.license ?? '',
+  ogDescription: () => pkg.value?.license ?? '',
+  twitterDescription: () => pkg.value?.license ?? '',
 })
 
 defineOgImageComponent('Default', {
@@ -115,14 +125,15 @@ const showEmptyState = computed(() => docsData.value?.status !== 'ok')
     <!-- Sticky header - positioned below AppHeader -->
     <header
       aria-label="Package documentation header"
-      class="docs-header sticky z-10 bg-bg/95 backdrop-blur border-b border-border"
+      class="docs-header sticky z-10 border-b border-border"
     >
-      <div class="px-4 sm:px-6 lg:px-8 py-4">
+      <div class="absolute inset-0 bg-bg/90 backdrop-blur" />
+      <div class="relative px-4 sm:px-6 lg:px-8 py-4 z-1">
         <div class="flex items-center justify-between gap-4">
           <div class="flex items-center gap-3 min-w-0">
             <NuxtLink
               v-if="packageName"
-              :to="{ name: 'package', params: { package: [packageName] } }"
+              :to="packageRoute(packageName)"
               class="font-mono text-lg sm:text-xl font-semibold text-fg hover:text-fg-muted transition-colors truncate"
             >
               {{ packageName }}
@@ -148,7 +159,7 @@ const showEmptyState = computed(() => docsData.value?.status !== 'ok')
       </div>
     </header>
 
-    <div class="flex">
+    <div class="flex" dir="ltr">
       <!-- Sidebar TOC -->
       <aside
         v-if="docsData?.toc && !showEmptyState"
@@ -166,10 +177,10 @@ const showEmptyState = computed(() => docsData.value?.status !== 'ok')
       <!-- Main content -->
       <main class="flex-1 min-w-0">
         <div v-if="showLoading" class="p-6 sm:p-8 lg:p-12 space-y-4">
-          <div class="skeleton h-8 w-64 rounded" />
-          <div class="skeleton h-4 w-full max-w-2xl rounded" />
-          <div class="skeleton h-4 w-5/6 max-w-2xl rounded" />
-          <div class="skeleton h-4 w-3/4 max-w-2xl rounded" />
+          <SkeletonBlock class="h-8 w-64 rounded" />
+          <SkeletonBlock class="h-4 w-full max-w-2xl rounded" />
+          <SkeletonBlock class="h-4 w-5/6 max-w-2xl rounded" />
+          <SkeletonBlock class="h-4 w-3/4 max-w-2xl rounded" />
         </div>
 
         <div v-else-if="showEmptyState" class="p-6 sm:p-8 lg:p-12">
@@ -181,7 +192,7 @@ const showEmptyState = computed(() => docsData.value?.status !== 'ok')
             <div class="flex gap-4 mt-4">
               <NuxtLink
                 v-if="packageName"
-                :to="{ name: 'package', params: { package: [packageName] } }"
+                :to="packageRoute(packageName)"
                 class="link-subtle font-mono text-sm"
               >
                 View package
@@ -471,5 +482,12 @@ const showEmptyState = computed(() => docsData.value?.status !== 'ok')
 
 .docs-content .docs-members pre code {
   @apply text-fg-muted;
+}
+
+.docs-content .docs-symbol-name,
+.docs-content .docs-members dl dd,
+.docs-content .docs-members dl dt code,
+.docs-content .docs-section .docs-symbol .docs-description {
+  word-break: break-all;
 }
 </style>
