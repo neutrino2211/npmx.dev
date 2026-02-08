@@ -36,12 +36,13 @@ const isChecking = computed(() => {
 })
 
 const mergedError = computed(() => {
-  return checkResult.value !== null
-    ? null
-    : (publishError.value ??
-        (checkError.value instanceof Error
-          ? checkError.value.message
-          : $t('claim.modal.failed_to_check')))
+  // Always show publish error when present (e.g. claim attempt failed)
+  if (publishError.value) return publishError.value
+  // Only show check error when we have no result and we're not still loading
+  if (checkResult.value !== null || status.value === 'pending') return null
+  return checkError.value instanceof Error
+    ? checkError.value.message
+    : $t('claim.modal.failed_to_check')
 })
 
 const connectorModal = useModal('connector-modal')
