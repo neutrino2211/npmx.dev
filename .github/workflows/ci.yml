@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -75,7 +75,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -84,7 +84,7 @@ jobs:
         run: pnpm install
 
       - name: 🧪 Unit tests
-        run: pnpm test:unit run --coverage --reporter=junit --outputFile=test-report.junit.xml
+        run: pnpm test:unit run --coverage --reporter=default --reporter=junit --outputFile=test-report.junit.xml
 
       - name: ⬆︎ Upload test results to Codecov
         if: ${{ !cancelled() }}
@@ -103,7 +103,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -115,7 +115,7 @@ jobs:
         run: pnpm playwright install chromium-headless-shell
 
       - name: 🧪 Component tests
-        run: pnpm test:nuxt run --coverage --reporter=junit --outputFile=test-report.junit.xml
+        run: pnpm test:nuxt run --coverage --reporter=default --reporter=junit --outputFile=test-report.junit.xml
 
       - name: ⬆︎ Upload coverage reports to Codecov
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
@@ -142,7 +142,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -172,7 +172,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -184,7 +184,7 @@ jobs:
         run: pnpm build:test
 
       - name: ♿ Accessibility audit (Lighthouse - ${{ matrix.mode }} mode)
-        run: ./scripts/lighthouse-a11y.sh
+        run: pnpm test:a11y:prebuilt
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
           LIGHTHOUSE_COLOR_MODE: ${{ matrix.mode }}
@@ -200,7 +200,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -225,7 +225,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - uses: pnpm/action-setup@1e1c8eafbd745f64b1ef30a7d7ed7965034c486c # 1e1c8eafbd745f64b1ef30a7d7ed7965034c486c
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # 4e1c8eafbd745f64b1ef30a7d7ed7965034c486c
         name: 🟧 Install pnpm
         with:
           cache: true
@@ -235,3 +235,8 @@ jobs:
 
       - name: 🌐 Check for missing or dynamic i18n keys
         run: pnpm i18n:report
+
+      - name: 🌐 Check i18n schema is up to date
+        run: |
+          pnpm i18n:schema
+          git diff --exit-code i18n/schema.json
