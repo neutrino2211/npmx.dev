@@ -434,7 +434,14 @@
       },
       "grant_button": "grant",
       "cancel_grant": "Cancel granting access",
-      "grant_access": "+ Grant team access"
+      "grant_access": "+ Grant team access",
+      "revoke": {
+        "title": "Revoke Team Access",
+        "warning": "This action cannot be undone",
+        "impact": "Team \"{team}\" will lose access to {package}. This operation will be queued and executed when you run the connector.",
+        "confirm": "Revoke Access",
+        "revoking": "Revoking..."
+      }
     },
     "list": {
       "filter_label": "Filter packages",
