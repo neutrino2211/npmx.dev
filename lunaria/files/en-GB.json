@@ -376,7 +376,14 @@
       "cancel_add": "Cancel adding owner",
       "add_owner": "+ Add owner",
       "show_more": "(show {count} more)",
-      "show_less": "(show fewer)"
+      "show_less": "(show fewer)",
+      "remove": {
+        "title": "Remove Owner",
+        "warning": "This action will revoke ownership.",
+        "impact": "{user} will no longer be able to publish updates to {package}.",
+        "removing": "Removing...",
+        "confirm": "Remove owner"
+      }
     },
     "trends": {
       "granularity": "Granularity",

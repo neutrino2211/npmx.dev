@@ -1137,6 +1137,27 @@
             },
             "show_less": {
               "type": "string"
+            },
+            "remove": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "warning": {
+                  "type": "string"
+                },
+                "impact": {
+                  "type": "string"
+                },
+                "removing": {
+                  "type": "string"
+                },
+                "confirm": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
